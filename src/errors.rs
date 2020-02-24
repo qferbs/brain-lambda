@@ -2,13 +2,11 @@ use std::error;
 use std::fmt;
 
 #[derive(Debug, Clone)]
-pub struct TokenError<'a> {
-    pub string: &'a str
-}
+pub struct TokenError<'a>(pub &'a str);
 
-impl fmt::Display for TokenError<'_> {
+impl<'a> fmt::Display for TokenError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Invalid token: {:?}", self.string)
+        write!(f, "Invalid token: {:?}", self)
     }
 }
 
@@ -19,12 +17,16 @@ impl error::Error for TokenError<'_> {
 }
 
 #[derive(Debug, Clone)]
-pub struct ParsingError {
-    pub string: String
+pub struct ParsingError<'a>(pub &'a str);
+
+impl<'a> error::Error for ParsingError<'a> {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
+    }
 }
 
-impl fmt::Display for ParsingError {
+impl<'a> fmt::Display for ParsingError<'a> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Parsing Error: {:?}", self.string)
+        write!(f, "Invalid token: {:?}", self)
     }
 }
