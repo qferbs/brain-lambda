@@ -123,68 +123,81 @@ pub fn parse_expr<'a>(token_tree: &'a Tree<&'a Token>)
     use Token::*;
     use Expression::*;
 
-    let mut out_expr: Option<Expression<u32>> = None;
-
     if token_tree.children.len() == 0 {
         return match token_tree.value {
-            Var(var) => Ok(Variable{name: var}),
-            Lit(lit) => Ok(Literal{value: lit.parse()
-                .or(Err(ParsingError("Illegal literal.")))?
-            }),
-            _ => Err(ParsingError("Value must be Var or Lit."))
+            Var(var) => Ok(Variable(var)),
+            Lit(lit) => Ok(Literal(lit.parse()
+                    .or(Err(ParsingError("Illegal literal.")))?
+                )),
+            Expr => parse_expr(token_tree),
+            _ => Err(ParsingError("Unexpected token, expected lit or var.")),
         }
-    } 
+    }
 
-    for (i, child) in token_tree.children.iter().enumerate() {
-        let Tree{value, children: _} = child;
+    let mut last_expr: Option<Expression<u32>> = None;
+    let mut tree_iter = token_tree.children.iter();
 
-        if let Some(expr) = match value {
-            Op(op) => Some(Operator{
+    while let Some(child) = tree_iter.next() {
+        if !match last_expr {
+            Some(Function{vars, lambda_term}) => {
+                last_expr = Some(Application{
+                    func: Box::new(Function{vars, lambda_term}),
+                    inputs: vec!(parse_expr(child)?),
+                });
+                true
+            },
+            Some(Application{func: _, ref mut inputs}) => {
+                inputs.push(parse_expr(child)?);
+                true
+            },
+            _ => false,
+        } {
+            last_expr = match child.value {
+                Op(op) => Some(Operator{
                     tok: op,
                     op: Box::new(get_op(&Op(op))?),
-                    lhs_expr: if out_expr.as_ref().unwrap_or(&Expression::default_var())
-                        .is_variant(&Expression::default_op()) {
-                            Box::new(out_expr.take().unwrap())
-                        } else {
-                        Box::new(parse_expr(token_tree.children.get(i-1)
-                            .ok_or(ParsingError("Operator missing argument."))?
-                        )?
-                    )},
+                    lhs_expr:  Box::new(last_expr.take()
+                        .ok_or(ParsingError("Operator missing lhs argument."))?
+                    ),
                     rhs_expr: Box::new(
-                        parse_expr(token_tree.children.get(i+1)
-                            .ok_or(ParsingError("Operator missing argument."))?
+                        parse_expr(tree_iter.next()
+                            .ok_or(ParsingError("Operator missing rhs argument."))?
                         )?
                     ),
-                }
-            ),
-            Key("=>") => Some(Function{
-                    vars: get_func_args(token_tree.children.get(i-1)
+                }),
+                Key("=>") => Some(Function{
+                    vars: get_func_args(last_expr.take()
                         .ok_or(ParsingError("Function missing variable list."))?
                     )?,
                     lambda_term: Box::new(
-                        parse_expr(token_tree.children.get(i+1)
+                        parse_expr(tree_iter.next()
                             .ok_or(ParsingError("Function missing lambda term."))?
                         )?
                     ),
-                }
-            ),
-            Expr => Some(parse_expr(child)?),
-            _ => None,
-        } {
-            match out_expr {
-                None => out_expr = Some(expr),
-                Some(Function{vars, lambda_term}) =>
-                    out_expr = Some(Application{
-                        func: Box::new(Function{vars, lambda_term}),
-                        inputs: vec!(expr)
-                    }),
-                Some(Application{func: _, ref mut inputs}) => inputs.push(expr),
-                _ => return Err(ParsingError("Illegal application.")),
+                }),
+                Expr => Some(parse_expr(child)?),
+                Var(var) => if let Some(Variable(first_arg)) = last_expr {
+                    // If to vars are next to each other, assume all tokens in scope are vars
+                    let mut args: Vec<&'a str> = vec!(first_arg, var);
+                    while let Some(ch) = tree_iter.next() {
+                        args.push(match ch.value {
+                            Var(arg) => arg,
+                            _ => return Err(ParsingError("Illegal FuncArgs.")),
+                        });
+                    }
+                    Some(FuncArgs(args.into_boxed_slice()))
+                } else {
+                    Some(Variable(var))
+                },
+                Lit(lit) => Some(Literal(lit.parse()
+                    .or(Err(ParsingError("Illegal literal.")))?
+                )),
+                _ => return Err(ParsingError("Invalid token.")),
             };
         }
     }
 
-    out_expr.ok_or(ParsingError("Invalid expression."))
+    last_expr.ok_or(ParsingError("Invalid expression. Empty expressions are not allowed."))
 }
 
 fn get_op<'a>(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError<'a>> {
@@ -199,23 +212,14 @@ fn get_op<'a>(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError<'
     }
 }
 
-fn get_func_args<'a>(token_tree: &'a Tree<&'a Token>) -> Result<Box<Vec<&'a str>>, ParsingError<'a>> {
+fn get_func_args<'a>(func_args: Expression<'a, u32>) -> Result<Box<[&'a str]>, ParsingError<'a>> {
 
-    let mut out_list: Vec<&str> = vec!();
-    // expecting Var("some_var") Var("some_other_var")
-    for child in token_tree.children.iter() {
-        let Tree{value, children: _} = child;
-        match value {
-            Token::Var(var) => if out_list.contains(var) {
-                return Err(ParsingError("Can't have two variables with the same name in function scope."))
-            } else {
-                out_list.push(var)
-            },
-            _ => return Err(ParsingError("Illegal argument list for function."))
-        };
-    }
-
-    Ok(Box::new(out_list))
+    Ok( match func_args {
+        Expression::FuncArgs(args) => args,
+        // to account for possibility of single arg
+        Expression::Variable(arg) => Box::new([arg]),
+        _ => return Err(ParsingError("Illegal function arguments.")),
+    })
 }
 
 pub struct Tree<V> {

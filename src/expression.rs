@@ -1,10 +1,11 @@
 use std::fmt;
 
 pub enum Expression<'a, V> {
-    Variable {name: &'a str},
-    Literal {value: V},
+    Variable (&'a str),
+    Literal (V),
+    FuncArgs(Box<[&'a str]>),
     Function {
-        vars: Box<Vec<&'a str>>,
+        vars: Box<[&'a str]>,
         lambda_term: Box<Expression<'a, V>>,
     },
     Operator {
@@ -28,14 +29,16 @@ impl<V> Expression<'_, V> {
 impl<V: fmt::Display> fmt::Debug for Expression<'_, V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Expression::Variable {name} =>
+            Expression::Variable(name) =>
                 write!(f, "Var({})", name),
-            Expression::Literal {value} =>
+            Expression::Literal(value) =>
                 write!(f, "Lit({})", value),
+            Expression::FuncArgs(args) =>
+                write!(f, "Args({:?})", args),
             Expression::Function {vars, lambda_term} =>
                 write!(f, "Func({:?} => {:?})", vars, lambda_term),
             Expression::Operator{tok, op: _, lhs_expr, rhs_expr} =>
-                write!(f, "{:?} {} {:?}", lhs_expr, tok, rhs_expr),
+                write!(f, "({:?} {} {:?})", lhs_expr, tok, rhs_expr),
             Expression::Application{func, inputs} =>
                 write!(f, "App({:?} {:?})", func, inputs),
         }?;
@@ -43,6 +46,7 @@ impl<V: fmt::Display> fmt::Debug for Expression<'_, V> {
     }
 }
 
+/*
 #[allow(dead_code)]
 impl<'a, V> Expression<'a, V> {
     pub fn new_var(name: &str) -> Expression<V> {
@@ -94,3 +98,4 @@ impl<'a, V> Expression<'a, V> {
             Expression::Application{func: Box::new(Expression::default_func()), inputs: vec!()}
         }
 }
+*/
