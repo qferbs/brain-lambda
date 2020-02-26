@@ -8,7 +8,7 @@ use std::fs::read_to_string;
 
 mod errors;
 mod expression;
-mod token_tree;
+mod parsing;
 mod utils;
 
 fn main() {
@@ -18,14 +18,14 @@ fn main() {
 
     let contents = read_to_string(file).expect("Error reading file.");
 
-    let comment_reg = Regex::new(token_tree::COMMENT).unwrap();
+    let comment_reg = Regex::new(parsing::COMMENT).unwrap();
     let contents = comment_reg.replace_all(&contents, "");
     println!("{:?}", contents);
 
-    let tokens = token_tree::lex(&contents).unwrap();
+    let tokens = parsing::lex(&contents).unwrap();
     println!("{:?}", tokens);
-    let tree = token_tree::parse(Box::new(tokens.iter())).unwrap();
+    let tree = parsing::parse(Box::new(tokens.iter())).unwrap();
     println!("{:?}", tree);
-    let expr = token_tree::parse_expr(&tree);
+    let expr = parsing::parse_expr(&tree);
     println!("{:?}", expr);
 }
