@@ -1,12 +1,12 @@
 use regex::RegexSet;
 
-use crate::errors::TokenError;
 use crate::errors::ParsingError;
-use crate::utils::split;
+use crate::errors::TokenError;
 use crate::expression::Expression;
-use std::rc::Rc;
+use crate::utils::split;
 use std::cell::RefCell;
 use std::fmt;
+use std::rc::Rc;
 
 macro_rules! comb_const {
     ($a:ident, $t:ty; $($i:ident, $($x:literal),+);+;) => {
@@ -20,16 +20,16 @@ macro_rules! comb_const {
 // regex constants defining legal values
 const VAR: &str = r"^\w+$";
 const KEY: &str = r"^=>$";
-const LIT: &str = "^[0-9]+|\".*\"$";
-const COMMENT: &str = r"^#.*$";
+// TODO: add hex
+const LIT: &str = "^[0-9]+|\'.\'$";
+pub const COMMENT: &str = r"(?m)#.*$";
 // whitespace tokens have no meaning
 comb_const! {
     SEP_AND_OP, &[char];
-    SEP, '{', '}','(',')','[',']', ';', ',';
-    OP, '+', '-', '.', '/', '*';
+    SEP, '{', '}','(',')';
+    OP, '+', '-', '/', '*';
     WHITESPACE, ' ', '\r', '\n', '\t';
 }
-
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Token<'a> {
@@ -38,19 +38,15 @@ pub enum Token<'a> {
     Sep(&'a str),
     Op(&'a str),
     Lit(&'a str),
-    Comment(&'a str),
     FuncBody,
     EOF,
     Expr, // generic
 }
 
-
 impl Token<'_> {
-    fn get_token(string: &str) -> Result<Token, TokenError>{
+    fn get_token(string: &str) -> Result<Token, TokenError> {
         lazy_static! {
-            static ref REG: RegexSet = RegexSet::new(
-                &[COMMENT, KEY, LIT, VAR]
-            ).unwrap();
+            static ref REG: RegexSet = RegexSet::new(&[KEY, LIT, VAR]).unwrap();
         }
 
         if string.len() == 1 {
@@ -60,25 +56,26 @@ impl Token<'_> {
                 return Ok(Token::Sep(string));
             }
         }
-        
+
         match REG.matches(string).iter().next() {
-            Some(0) => Ok(Token::Comment(string)),
-            Some(1) => Ok(Token::Key(string)),
-            Some(2) => Ok(Token::Lit(string)),
-            Some(3) => Ok(Token::Var(string)),
-            _ => Err(TokenError(string)),
+            Some(0) => Ok(Token::Key(string)),
+            Some(1) => Ok(Token::Lit(string)),
+            Some(2) => Ok(Token::Var(string)),
+            _ => Err(TokenError(String::from(string))),
         }
     }
 }
 
+pub fn lex(string: &str) -> Result<Vec<Token>, TokenError> {
+    let mut tokens: Vec<Token> = vec![];
 
-pub fn lex(string: &String) -> Result<Vec<Token>, TokenError> {
-    let mut tokens: Vec<Token> = vec!();
-
-    for token_string in split::Spliterator::new(string, SEP_AND_OP)
-        .filter(|s| !s.chars().nth(0)
-                    .and_then(|s| Some(WHITESPACE.contains(&s)))
-                    .unwrap_or(false) && s != &"") {
+    for token_string in split::Spliterator::new(string, SEP_AND_OP).filter(|s| {
+        !s.chars()
+            .nth(0)
+            .map(|s| WHITESPACE.contains(&s))
+            .unwrap_or(false)
+            && s != &""
+    }) {
         tokens.push(Token::get_token(token_string)?);
     }
 
@@ -86,23 +83,27 @@ pub fn lex(string: &String) -> Result<Vec<Token>, TokenError> {
     Ok(tokens)
 }
 
-
-pub fn parse<'a>(tokens: Box<dyn Iterator<Item = &'a Token> + 'a>) -> Result<Tree<&'a Token<'a>>, ParsingError<'a>> {
-
+pub fn parse<'a>(
+    tokens: Box<dyn Iterator<Item = &'a Token> + 'a>,
+) -> Result<Tree<&'a Token<'a>>, ParsingError> {
     parse_tree(Rc::new(RefCell::new(tokens)), &Token::Expr)
 }
 
-
-pub fn parse_tree<'a>(tokens: Rc<RefCell<dyn Iterator<Item = &'a Token> + 'a>>,
-                      value: &'a Token) -> Result<Tree<&'a Token<'a>>, ParsingError<'a>> {
+pub fn parse_tree<'a>(
+    tokens: Rc<RefCell<dyn Iterator<Item = &'a Token> + 'a>>,
+    value: &'a Token,
+) -> Result<Tree<&'a Token<'a>>, ParsingError> {
     use Token::*;
 
-    let mut children: Vec<Tree<&Token>> = vec!();
+    let mut children: Vec<Tree<&Token>> = vec![];
 
     loop {
         let tok = {
-            if let Some(t) = tokens.borrow_mut().next() {t}
-            else {return Err(ParsingError("Misaligned delimiters."));}
+            if let Some(t) = tokens.borrow_mut().next() {
+                t
+            } else {
+                return Err(ParsingError("Misaligned delimiters.".to_string()));
+            }
         };
 
         let child: Tree<&Token> = match tok {
@@ -111,27 +112,28 @@ pub fn parse_tree<'a>(tokens: Rc<RefCell<dyn Iterator<Item = &'a Token> + 'a>>,
             Sep(")") => return Ok(Tree::new(value, children)),
             Sep("}") => return Ok(Tree::new(value, children)),
             EOF => return Ok(Tree::new(value, children)),
-            ref t => Tree::new(t, vec!()),
+            ref t => Tree::new(t, vec![]),
         };
 
         children.push(child);
     }
 }
 
-pub fn parse_expr<'a>(token_tree: &'a Tree<&'a Token>)
-    -> Result<Expression<'a, u32>, ParsingError<'a>> {
-    use Token::*;
+pub fn parse_expr<'a>(
+    token_tree: &'a Tree<&'a Token>,
+) -> Result<Expression<'a, u32>, ParsingError> {
     use Expression::*;
+    use Token::*;
 
     if token_tree.children.len() == 0 {
         return match token_tree.value {
             Var(var) => Ok(Variable(var)),
-            Lit(lit) => Ok(Literal(lit.parse()
-                    .or(Err(ParsingError("Illegal literal.")))?
-                )),
+            Lit(lit) => Ok(Literal(parse_lit(lit)?)),
             Expr => parse_expr(token_tree),
-            _ => Err(ParsingError("Unexpected token, expected lit or var.")),
-        }
+            _ => Err(ParsingError(
+                "Unexpected token, expected lit or var.".to_string(),
+            )),
+        };
     }
 
     let mut last_expr: Option<Expression<u32>> = None;
@@ -139,68 +141,70 @@ pub fn parse_expr<'a>(token_tree: &'a Tree<&'a Token>)
 
     while let Some(child) = tree_iter.next() {
         if !match last_expr {
-            Some(Function{vars, lambda_term}) => {
-                last_expr = Some(Application{
-                    func: Box::new(Function{vars, lambda_term}),
-                    inputs: vec!(parse_expr(child)?),
+            Some(Function { vars, lambda_term }) => {
+                last_expr = Some(Application {
+                    func: Box::new(Function { vars, lambda_term }),
+                    inputs: vec![parse_expr(child)?],
                 });
                 true
-            },
-            Some(Application{func: _, ref mut inputs}) => {
+            }
+            Some(Application { ref mut inputs, .. }) => {
                 inputs.push(parse_expr(child)?);
                 true
-            },
+            }
             _ => false,
         } {
             last_expr = match child.value {
-                Op(op) => Some(Operator{
+                Op(op) => Some(Operator {
                     tok: op,
                     op: Box::new(get_op(&Op(op))?),
-                    lhs_expr:  Box::new(last_expr.take()
-                        .ok_or(ParsingError("Operator missing lhs argument."))?
-                    ),
-                    rhs_expr: Box::new(
-                        parse_expr(tree_iter.next()
-                            .ok_or(ParsingError("Operator missing rhs argument."))?
-                        )?
-                    ),
+                    lhs_expr: Box::new(last_expr.take().ok_or_else(|| {
+                        ParsingError("Operator missing lhs argument.".to_string())
+                    })?),
+                    rhs_expr: Box::new(parse_expr(tree_iter.next().ok_or_else(|| {
+                        ParsingError("Operator missing rhs argument.".to_string())
+                    })?)?),
                 }),
-                Key("=>") => Some(Function{
-                    vars: get_func_args(last_expr.take()
-                        .ok_or(ParsingError("Function missing variable list."))?
-                    )?,
-                    lambda_term: Box::new(
-                        parse_expr(tree_iter.next()
-                            .ok_or(ParsingError("Function missing lambda term."))?
-                        )?
-                    ),
+                Key("=>") => Some(Function {
+                    vars: get_func_args(last_expr.take().ok_or_else(|| {
+                        ParsingError("Function missing variable list.".to_string())
+                    })?)?,
+                    lambda_term: Box::new(parse_expr(tree_iter.next().ok_or_else(|| {
+                        ParsingError("Function missing lambda term.".to_string())
+                    })?)?),
                 }),
                 Expr => Some(parse_expr(child)?),
-                Var(var) => if let Some(Variable(first_arg)) = last_expr {
-                    // If to vars are next to each other, assume all tokens in scope are vars
-                    let mut args: Vec<&'a str> = vec!(first_arg, var);
-                    while let Some(ch) = tree_iter.next() {
-                        args.push(match ch.value {
-                            Var(arg) => arg,
-                            _ => return Err(ParsingError("Illegal FuncArgs.")),
-                        });
+                Var(var) => {
+                    if let Some(Variable(first_arg)) = last_expr {
+                        // If two vars are next to each other, assume all tokens in scope are vars
+                        let mut args: Vec<&'a str> = vec![first_arg, var];
+                        for ch in &mut tree_iter {
+                            args.push(match ch.value {
+                                Var(arg) => arg,
+                                _ => return Err(ParsingError("Illegal FuncArgs.".to_string())),
+                            });
+                        }
+                        Some(FuncArgs(args.into_boxed_slice()))
+                    } else {
+                        Some(Variable(var))
                     }
-                    Some(FuncArgs(args.into_boxed_slice()))
-                } else {
-                    Some(Variable(var))
-                },
-                Lit(lit) => Some(Literal(lit.parse()
-                    .or(Err(ParsingError("Illegal literal.")))?
-                )),
-                _ => return Err(ParsingError("Invalid token.")),
+                }
+                Lit(lit) => {
+                    Some(Literal(lit.parse().or_else(|_| {
+                        Err(ParsingError("Illegal literal.".to_string()))
+                    })?))
+                }
+                _ => return Err(ParsingError("Invalid token.".to_string())),
             };
         }
     }
 
-    last_expr.ok_or(ParsingError("Invalid expression. Empty expressions are not allowed."))
+    last_expr.ok_or_else(|| {
+        ParsingError("Invalid expression. Empty expressions are not allowed.".to_string())
+    })
 }
 
-fn get_op<'a>(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError<'a>> {
+fn get_op(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError> {
     use Token::*;
 
     match op {
@@ -208,20 +212,32 @@ fn get_op<'a>(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError<'
         Op("-") => Ok(Box::new(|x, y| x - y)),
         Op("*") => Ok(Box::new(|x, y| x * y)),
         Op("/") => Ok(Box::new(|x, y| x / y)),
-        _ => Err(ParsingError("Illegal operator.")),
+        _ => Err(ParsingError("Illegal operator.".to_string())),
     }
 }
 
-fn get_func_args<'a>(func_args: Expression<'a, u32>) -> Result<Box<[&'a str]>, ParsingError<'a>> {
-
-    Ok( match func_args {
+fn get_func_args<'a>(func_args: Expression<'a, u32>) -> Result<Box<[&'a str]>, ParsingError> {
+    Ok(match func_args {
         Expression::FuncArgs(args) => args,
         // to account for possibility of single arg
         Expression::Variable(arg) => Box::new([arg]),
-        _ => return Err(ParsingError("Illegal function arguments.")),
+        _ => return Err(ParsingError("Illegal function arguments.".to_string())),
     })
 }
 
+fn parse_lit(lit_str: &str) -> Result<u32, ParsingError> {
+    // TODO: add hex
+    if let Ok(x) = lit_str.parse::<u32>() {
+        Ok(x)
+    } else {
+        Ok(lit_str
+            .chars()
+            .nth(1)
+            .ok_or_else(|| ParsingError("Illegal literal.".to_string()))? as u32)
+    }
+}
+
+#[derive(Eq, PartialEq)]
 pub struct Tree<V> {
     value: V,
     pub children: Box<[Tree<V>]>,
@@ -229,13 +245,15 @@ pub struct Tree<V> {
 
 impl<V> Tree<V> {
     pub fn new(value: V, children: Vec<Tree<V>>) -> Tree<V> {
-        Tree {value: value, children: children.into_boxed_slice()}
+        Tree {
+            value,
+            children: children.into_boxed_slice(),
+        }
     }
 }
 
 impl<V: fmt::Debug> fmt::Debug for Tree<V> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-
         fn pprint<V: fmt::Debug>(slf: &Tree<V>, tabs: &str) -> String {
             let mut st = String::new();
             st.push_str(&format!("{}-{:?}", tabs, slf.value));
@@ -248,5 +266,92 @@ impl<V: fmt::Debug> fmt::Debug for Tree<V> {
         }
 
         write!(f, "Tree:\n{}", pprint(self, "  "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use Token::*;
+
+    #[test]
+    fn lex_test() {
+        let input = "\tvar => \n(030 + 'c')";
+        assert_eq!(
+            lex(input).unwrap(),
+            vec!(
+                Var("var"),
+                Key("=>"),
+                Sep("("),
+                Lit("030"),
+                Op("+"),
+                Lit("'c'"),
+                Sep(")"),
+                EOF
+            )
+        );
+    }
+
+    #[test]
+    fn parse_test() {
+        // "x => (a + (b c))"
+        let input = vec![
+            Var("x"),
+            Key("=>"),
+            Sep("("),
+            Lit("a"),
+            Op("+"),
+            Sep("("),
+            Lit("b"),
+            Var("c"),
+            Sep(")"),
+            Sep(")"),
+            EOF,
+        ];
+        assert_eq!(
+            parse(Box::new(input.iter())).unwrap(),
+            Tree::new(
+                &Expr,
+                vec!(
+                    Tree::new(&Var("x"), vec!()),
+                    Tree::new(&Key("=>"), vec!()),
+                    Tree::new(
+                        &Expr,
+                        vec!(
+                            Tree::new(&Lit("a"), vec!()),
+                            Tree::new(&Op("+"), vec!()),
+                            Tree::new(
+                                &Expr,
+                                vec!(Tree::new(&Lit("b"), vec!()), Tree::new(&Var("c"), vec!()),)
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    }
+
+    #[test]
+    fn parse_expr_test() {
+        let input = Tree::new(
+            &Expr,
+            vec![
+                Tree::new(
+                    &Expr,
+                    vec![Tree::new(&Var("x"), vec![]), Tree::new(&Var("why"), vec![])],
+                ),
+                Tree::new(&Key("=>"), vec![]),
+                Tree::new(
+                    &Expr,
+                    vec![
+                        Tree::new(&Lit("030"), vec![]),
+                        Tree::new(&Op("+"), vec![]),
+                        Tree::new(&Lit("'b'"), vec![]),
+                    ],
+                ),
+                Tree::new(&Lit("30"), vec![]),
+            ],
+        );
+        parse_expr(&input).unwrap();
     }
 }
