@@ -42,7 +42,9 @@ impl<V: fmt::Display> fmt::Debug for Expression<'_, V> {
                 rhs_expr,
                 ..
             } => write!(f, "({:?} {} {:?})", lhs_expr, tok, rhs_expr),
-            Expression::Application { func, inputs } => write!(f, "App({:?} {:?})", func, inputs),
+            Expression::Application { func, inputs } => {
+                write!(f, "App({:?} {:?})", func, inputs)
+            }
         }?;
         Ok(())
     }

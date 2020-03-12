@@ -1,3 +1,4 @@
+use regex::Regex;
 use regex::RegexSet;
 
 use crate::errors::ParsingError;
@@ -161,17 +162,17 @@ pub fn parse_expr<'a>(
                     lhs_expr: Box::new(last_expr.take().ok_or_else(|| {
                         ParsingError("Operator missing lhs argument.".to_string())
                     })?),
-                    rhs_expr: Box::new(parse_expr(tree_iter.next().ok_or_else(|| {
-                        ParsingError("Operator missing rhs argument.".to_string())
-                    })?)?),
+                    rhs_expr: Box::new(parse_expr(tree_iter.next().ok_or_else(
+                        || ParsingError("Operator missing rhs argument.".to_string()),
+                    )?)?),
                 }),
                 Key("=>") => Some(Function {
                     vars: get_func_args(last_expr.take().ok_or_else(|| {
                         ParsingError("Function missing variable list.".to_string())
                     })?)?,
-                    lambda_term: Box::new(parse_expr(tree_iter.next().ok_or_else(|| {
-                        ParsingError("Function missing lambda term.".to_string())
-                    })?)?),
+                    lambda_term: Box::new(parse_expr(tree_iter.next().ok_or_else(
+                        || ParsingError("Function missing lambda term.".to_string()),
+                    )?)?),
                 }),
                 Expr => Some(parse_expr(child)?),
                 Var(var) => {
@@ -181,7 +182,11 @@ pub fn parse_expr<'a>(
                         for ch in &mut tree_iter {
                             args.push(match ch.value {
                                 Var(arg) => arg,
-                                _ => return Err(ParsingError("Illegal FuncArgs.".to_string())),
+                                _ => {
+                                    return Err(ParsingError(
+                                        "Illegal FuncArgs.".to_string(),
+                                    ))
+                                }
                             });
                         }
                         Some(FuncArgs(args.into_boxed_slice()))
@@ -200,7 +205,9 @@ pub fn parse_expr<'a>(
     }
 
     last_expr.ok_or_else(|| {
-        ParsingError("Invalid expression. Empty expressions are not allowed.".to_string())
+        ParsingError(
+            "Invalid expression. Empty expressions are not allowed.".to_string(),
+        )
     })
 }
 
@@ -216,7 +223,9 @@ fn get_op(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError> {
     }
 }
 
-fn get_func_args<'a>(func_args: Expression<'a, u32>) -> Result<Box<[&'a str]>, ParsingError> {
+fn get_func_args<'a>(
+    func_args: Expression<'a, u32>,
+) -> Result<Box<[&'a str]>, ParsingError> {
     Ok(match func_args {
         Expression::FuncArgs(args) => args,
         // to account for possibility of single arg
@@ -225,7 +234,7 @@ fn get_func_args<'a>(func_args: Expression<'a, u32>) -> Result<Box<[&'a str]>, P
     })
 }
 
-fn parse_lit(lit_str: &str) -> Result<u32, ParsingError> {
+pub fn parse_lit(lit_str: &str) -> Result<u32, ParsingError> {
     // TODO: add hex
     if let Ok(x) = lit_str.parse::<u32>() {
         Ok(x)
@@ -233,8 +242,14 @@ fn parse_lit(lit_str: &str) -> Result<u32, ParsingError> {
         Ok(lit_str
             .chars()
             .nth(1)
-            .ok_or_else(|| ParsingError("Illegal literal.".to_string()))? as u32)
+            .ok_or_else(|| ParsingError("Illegal literal.".to_string()))?
+            as u32)
     }
+}
+
+pub fn strip_comments(string: String) -> String {
+    let comment_reg = Regex::new(COMMENT).unwrap();
+    comment_reg.replace_all(&string, "").to_string()
 }
 
 #[derive(Eq, PartialEq)]
@@ -322,7 +337,10 @@ mod tests {
                             Tree::new(&Op("+"), vec!()),
                             Tree::new(
                                 &Expr,
-                                vec!(Tree::new(&Lit("b"), vec!()), Tree::new(&Var("c"), vec!()),)
+                                vec!(
+                                    Tree::new(&Lit("b"), vec!()),
+                                    Tree::new(&Var("c"), vec!()),
+                                )
                             )
                         )
                     )

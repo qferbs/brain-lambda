@@ -1,11 +1,11 @@
 #[macro_use]
 extern crate lazy_static;
 
-use regex::Regex;
-
 use std::env;
 use std::fs::read_to_string;
 
+mod brainfuck_ops;
+mod compile;
 mod errors;
 mod expression;
 mod parsing;
@@ -18,8 +18,10 @@ fn main() {
 
     let contents = read_to_string(file).expect("Error reading file.");
 
-    let comment_reg = Regex::new(parsing::COMMENT).unwrap();
-    let contents = comment_reg.replace_all(&contents, "");
+    utils::compile_debug::compile_and_run_augmented_brainfuck(contents);
+
+    /*
+    let contents = parsing::strip_comments(contents);
     println!("{:?}", contents);
 
     let tokens = parsing::lex(&contents).unwrap();
@@ -28,4 +30,5 @@ fn main() {
     println!("{:?}", tree);
     let expr = parsing::parse_expr(&tree);
     println!("{:?}", expr);
+    */
 }

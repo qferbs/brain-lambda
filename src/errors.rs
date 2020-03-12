@@ -30,3 +30,18 @@ impl fmt::Display for ParsingError {
         write!(f, "Parsing error: {:?}", self)
     }
 }
+
+#[derive(Debug, Clone)]
+pub struct CompilationError(pub String);
+
+impl error::Error for CompilationError {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        None
+    }
+}
+
+impl fmt::Display for CompilationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Compilation error: {:?}", self)
+    }
+}
