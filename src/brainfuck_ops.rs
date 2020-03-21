@@ -49,18 +49,56 @@ pub fn bf_equals(
     temp2: &Register,
     cur_reg: &mut Register,
 ) -> String {
-    format!(
+    bf_equality(r1, r2, temp1, temp2, cur_reg, true)
+}
+
+/// Returns a BF String of commands to replace 'r1' with
+/// the evalutation of 'r1' != 'r2'.
+/// # Arguments
+/// * 'r1' - The register to evaluate against 'r2'. Will be replaced with
+///          the value of the expression 'r1' != 'r2'.
+/// * 'r2' - The register to evaluate against 'r1'. Value is preserved.
+/// * 'temp1' - A temporary register. Will be cleared after evaluation.
+/// * 'temp2' - A temporary register. Will be cleared after evaluation.
+/// * 'cur_reg' - The current register the pointer points to.
+pub fn bf_not_equals(
+    r1: &Register,
+    r2: &Register,
+    temp1: &Register,
+    temp2: &Register,
+    cur_reg: &mut Register,
+) -> String {
+    bf_equality(r1, r2, temp1, temp2, cur_reg, false)
+}
+
+// returns r1 == r2 if equals is True, else returns r1 != r2 in bf.
+fn bf_equality(
+    r1: &Register,
+    r2: &Register,
+    temp1: &Register,
+    temp2: &Register,
+    cur_reg: &mut Register,
+    equals: bool,
+) -> String {
+    let mut out = format!(
         "{zero1}\
         {zero2}\
-        {r1_1}[{t1_1}+{r1_2}-]+\
-        {r2_1}[{t1_2}-{t2_1}+{r2_2}-]\
-        {t2_2}[{r2_3}+{t2_3}-]\
-        {t1_3}[{r1_3}-{t1_4}[-]]",
+        {r1_1}[{t1_1}+{r1_2}-]",
         zero1 = temp1.zero(cur_reg),
         zero2 = temp2.zero(cur_reg),
         r1_1 = r1.to_bf(cur_reg),
         t1_1 = temp1.to_bf(cur_reg),
         r1_2 = r1.to_bf(cur_reg),
+    );
+
+    if equals {
+        out.push('+');
+    }
+
+    out.push_str(&format!(
+        "{r2_1}[{t1_2}-{t2_1}+{r2_2}-]\
+        {t2_2}[{r2_3}+{t2_3}-]\
+        {t1_3}[{r1_3}-{t1_4}[-]]",
         r2_1 = r2.to_bf(cur_reg),
         t1_2 = temp1.to_bf(cur_reg),
         t2_1 = temp2.to_bf(cur_reg),
@@ -71,7 +109,9 @@ pub fn bf_equals(
         t1_3 = temp1.to_bf(cur_reg),
         r1_3 = r1.to_bf(cur_reg),
         t1_4 = temp1.to_bf(cur_reg),
-    )
+    ));
+
+    out
 }
 
 /// Returns a BF String of commands to replace 'r' with
@@ -88,20 +128,57 @@ pub fn bf_equals_const(
     temp: &Register,
     cur_reg: &mut Register,
 ) -> String {
-    format!(
+    bf_equality_const(r, c, temp, cur_reg, true)
+}
+
+/// Returns a BF String of commands to replace 'r' with
+/// the evaluation of 'r' != 'c'.
+/// # Arguments
+/// * 'r' - The register to evaluate against 'c'. Will be replaced with
+///         the value of the expression 'r1' != 'c'.
+/// * 'c' - The constant to evaluate against 'r'.
+/// * 'temp' - A temporary register. Will be cleared after evaluation.
+/// * 'cur_reg' - The current register the pointer points to.
+pub fn bf_not_equals_const(
+    r: &Register,
+    c: u32,
+    temp: &Register,
+    cur_reg: &mut Register,
+) -> String {
+    bf_equality_const(r, c, temp, cur_reg, false)
+}
+
+// returns r1 == c if equals is true, else returns r1 != c
+fn bf_equality_const(
+    r: &Register,
+    c: u32,
+    temp: &Register,
+    cur_reg: &mut Register,
+    equals: bool,
+) -> String {
+    let mut out = format!(
         "{zero}\
-        {r_1}[{t_1}+{r_2}-]+\
-        {t_2}{constant}\
-        [{r_3}-{t_3}[-]]",
+        {r_1}[{t_1}+{r_2}-]",
         zero = temp.zero(cur_reg),
         r_1 = r.to_bf(cur_reg),
         t_1 = temp.to_bf(cur_reg),
         r_2 = r.to_bf(cur_reg),
+    );
+
+    if equals {
+        out.push('+');
+    }
+
+    out.push_str(&format!(
+        "{t_2}{constant}\
+        [{r_3}-{t_3}[-]]",
         t_2 = temp.to_bf(cur_reg),
         constant = bf_expand_const(-(c as i32)),
         r_3 = r.to_bf(cur_reg),
         t_3 = temp.to_bf(cur_reg),
-    )
+    ));
+
+    out
 }
 
 /// Expands 'c' to to a string of BF commands to increment/decrement the value of 'c'.
@@ -154,6 +231,20 @@ mod tests {
     }
 
     #[test]
+    fn not_equals_test() {
+        let r1 = Register(0);
+        let r2 = Register(1);
+        let t1 = Register(2);
+        let t2 = Register(3);
+        let mut cur_reg = Register(0);
+
+        assert_eq!(
+            bf_not_equals(&r1, &r2, &t1, &t2, &mut cur_reg),
+            String::from(">>[-]>[-]<<<[>>+<<-]>[>->+<<-]>>[<<+>>-]<[<<->>[-]]")
+        )
+    }
+
+    #[test]
     fn equals_const_test() {
         let r = Register(0);
         let t = Register(1);
@@ -162,6 +253,18 @@ mod tests {
         assert_eq!(
             bf_equals_const(&r, 3, &t, &mut cur_reg),
             String::from(">[-]<[>+<-]+>---[<->[-]]")
+        )
+    }
+
+    #[test]
+    fn not_equals_const_test() {
+        let r = Register(0);
+        let t = Register(1);
+        let mut cur_reg = Register(0);
+
+        assert_eq!(
+            bf_not_equals_const(&r, 3, &t, &mut cur_reg),
+            String::from(">[-]<[>+<-]>---[<->[-]]")
         )
     }
 }
