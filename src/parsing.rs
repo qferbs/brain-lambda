@@ -157,8 +157,7 @@ pub fn parse_expr<'a>(
         } {
             last_expr = match child.value {
                 Op(op) => Some(Operator {
-                    tok: op,
-                    op: Box::new(get_op(&Op(op))?),
+                    op,
                     lhs_expr: Box::new(last_expr.take().ok_or_else(|| {
                         ParsingError("Operator missing lhs argument.".to_string())
                     })?),
@@ -209,18 +208,6 @@ pub fn parse_expr<'a>(
             "Invalid expression. Empty expressions are not allowed.".to_string(),
         )
     })
-}
-
-fn get_op(op: &Token) -> Result<Box<dyn Fn(u32, u32) -> u32>, ParsingError> {
-    use Token::*;
-
-    match op {
-        Op("+") => Ok(Box::new(|x, y| x + y)),
-        Op("-") => Ok(Box::new(|x, y| x - y)),
-        Op("*") => Ok(Box::new(|x, y| x * y)),
-        Op("/") => Ok(Box::new(|x, y| x / y)),
-        _ => Err(ParsingError("Illegal operator.".to_string())),
-    }
 }
 
 fn get_func_args<'a>(

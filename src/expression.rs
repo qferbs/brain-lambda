@@ -9,8 +9,7 @@ pub enum Expression<'a, V> {
         lambda_term: Box<Expression<'a, V>>,
     },
     Operator {
-        tok: &'a str,
-        op: Box<dyn Fn(V, V) -> V>,
+        op: &'a str,
         lhs_expr: Box<Expression<'a, V>>,
         rhs_expr: Box<Expression<'a, V>>,
     },
@@ -37,11 +36,11 @@ impl<V: fmt::Display> fmt::Debug for Expression<'_, V> {
                 write!(f, "Func({:?} => {:?})", vars, lambda_term)
             }
             Expression::Operator {
-                tok,
+                op,
                 lhs_expr,
                 rhs_expr,
                 ..
-            } => write!(f, "({:?} {} {:?})", lhs_expr, tok, rhs_expr),
+            } => write!(f, "({:?} {} {:?})", lhs_expr, op, rhs_expr),
             Expression::Application { func, inputs } => {
                 write!(f, "App({:?} {:?})", func, inputs)
             }
