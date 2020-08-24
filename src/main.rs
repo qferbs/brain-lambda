@@ -18,17 +18,14 @@ fn main() {
 
     let contents = read_to_string(file).expect("Error reading file.");
 
-    utils::compile_debug::compile_and_run_augmented_brainfuck(contents);
+    // utils::compile_debug::compile_and_run_augmented_brainfuck(contents);
 
-    /*
     let contents = parsing::strip_comments(contents);
     println!("{:?}", contents);
-
     let tokens = parsing::lex(&contents).unwrap();
     println!("{:?}", tokens);
     let tree = parsing::parse(Box::new(tokens.iter())).unwrap();
     println!("{:?}", tree);
     let expr = parsing::parse_expr(&tree);
     println!("{:?}", expr);
-    */
 }

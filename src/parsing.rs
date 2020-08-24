@@ -308,6 +308,31 @@ mod tests {
     }
 
     #[test]
+    fn lex_test_complex() {
+        let input = "\n\t(a c_c) => (2 + a*c_c) 6 'f'";
+        assert_eq!(
+            lex(input).unwrap(),
+            vec!(
+                Sep("("),
+                Var("a"),
+                Var("c_c"),
+                Sep(")"),
+                Key("=>"),
+                Sep("("),
+                Lit("2"),
+                Op("+"),
+                Var("a"),
+                Op("*"),
+                Var("c_c"),
+                Sep(")"),
+                Lit("6"),
+                Lit("'f'"),
+                EOF
+            )
+        );
+    }
+
+    #[test]
     fn parse_test() {
         // "x => (a + (b c))"
         let input = vec![

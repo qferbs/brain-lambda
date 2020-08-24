@@ -1,5 +1,7 @@
 use std::iter;
 
+/// Iterator which splits a string at each side of an occurence of a char in 'pattern',
+/// conserving the char as its own string.
 pub struct Spliterator<'a> {
     string: &'a str,
     pattern: &'a [char],
@@ -11,10 +13,8 @@ impl<'a> iter::Iterator for Spliterator<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(next) = self.next {
             self.next = None;
-            return Some(next);
-        }
-
-        if let Some((split, end)) = self
+            Some(next)
+        } else if let Some((split, end)) = self
             .string
             .find(self.pattern)
             .map(|i| self.string.split_at(i))
@@ -23,6 +23,10 @@ impl<'a> iter::Iterator for Spliterator<'a> {
             self.string = tail;
             self.next = Some(op);
             Some(split)
+        } else if self.string != "" {
+            let out = self.string;
+            self.string = "";
+            Some(out)
         } else {
             None
         }
